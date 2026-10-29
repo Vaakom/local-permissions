@@ -1,0 +1,13 @@
+# Publish only reviewed source files; runtime and credentials stay external.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/LICENSE
+!/run.py
+!/submit.py
+!/install.py
+!/verify_rules.py
+# Real machine access rules must never be published. Generate locally instead.
+!/test_dispatch.py
+!/test_submit.py
