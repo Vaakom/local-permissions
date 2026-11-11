@@ -4,6 +4,14 @@
 
 Это исходники конкретной локальной интеграции, а не универсальный менеджер разрешений. Сам продукт и его установка не предоставляют согласия пользователя. Наличие GitHub-авторизации не предоставляет прав на локальные действия.
 
+## Последние изменения
+
+- [2026-11-11 — Add fixed diagnostic operations](https://github.com/Vaakom/local-permissions/commit/376e6d36a53eba0d956972fef478c907fc3f7634): добавлены ограниченные проверки GitHub, Dion, Syncthing, ссылок и фиксированные тестовые наборы.
+- [2026-10-29 — Document local-only generation of access rules](https://github.com/Vaakom/local-permissions/commit/7a71f2620c9a8a3c8e6792bedfd71ab201f9ceaa).
+- [2026-10-29 — Publish local operation dispatcher and synthetic checks](https://github.com/Vaakom/local-permissions/commit/34a4f6041debdad7f6ce0d212a0a35adc73df1e1).
+
+[Полная история коммитов](https://github.com/Vaakom/local-permissions/commits/main/).
+
 ## Зависимости и размещение
 
 Текущая конфигурация использует фиксированные пути:
