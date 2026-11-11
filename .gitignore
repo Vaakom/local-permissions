@@ -11,3 +11,5 @@
 # Real machine access rules must never be published. Generate locally instead.
 !/test_dispatch.py
 !/test_submit.py
+!/operations.py
+!/test_operations.py

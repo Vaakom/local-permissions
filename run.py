@@ -12,9 +12,11 @@ STATE = Path('C:/AI/Tools/local-permissions')
 REQUEST = STATE / 'request.json'
 PYTHON = Path('C:/AI/Tools/.dion-secretary/venv/Scripts/python.exe')
 SESSIONS = Path('C:/AI/Large files/Dion')
+SUMMARY_JOBS = Path('C:/AI/Tools/.dion-secretary/summary-jobs')
 NOTES = VAULT / 'meetings/Dion'
 JOURNALS = Path('C:/AI/Tools/dion-speaker-helper/runtime/journals')
 DOCS = Path('C:/AI/Large files/documents')
+RULES_DIR = Path.home() / '.codex/rules'
 SUFFIXES = {'.md', '.txt', '.pdf', '.docx', '.xlsx', '.csv', '.pptx',
             '.png', '.jpg', '.jpeg', '.webp', '.gif', '.html', '.htm'}
 
@@ -32,7 +34,7 @@ def fields(req, allowed):
         raise ValueError('Unknown request fields')
 
 
-def path_under(value, roots, *, exists=True, directory=False):
+def path_under(value, roots, *, exists=True, directory=False, allow_hidden=False):
     raw = text(value)
     if raw.startswith(('\\\\', '//')) or ':' in raw[2:]:
         raise ValueError('UNC paths and alternate streams are not allowed')
@@ -42,7 +44,7 @@ def path_under(value, roots, *, exists=True, directory=False):
     p = p.resolve(strict=exists)
     if not any(p != root.resolve() and p.is_relative_to(root.resolve()) for root in roots):
         raise ValueError('Path is outside permitted roots')
-    if any(part.casefold() == 'private' or part.startswith('.') for part in p.parts[1:]):
+    if any(part.casefold() == 'private' or (not allow_hidden and part.startswith('.')) for part in p.parts[1:]):
         raise ValueError('Private and hidden paths require separate authorization')
     if exists and (p.is_dir() if directory else p.is_file()) is False:
         raise ValueError('Wrong path type')
@@ -57,6 +59,9 @@ def build_plan(req):
     if not isinstance(req, dict):
         raise ValueError('Request must be an object')
     op = req.get('operation')
+    if op in {'tests', 'diagnostic', 'github', 'link'}:
+        from operations import plan
+        return plan(req)
     if op == 'dion':
         fields(req, {'operation', 'action', 'title', 'speaker', 'mic', 'session',
                      'meeting_journal', 'transcript', 'handoff', 'draft'})
@@ -85,8 +90,14 @@ def build_plan(req):
             args += ['--transcript', str(p), '--minutes-provider', 'codex']
         elif action == 'finalize-minutes':
             accepted |= {'handoff', 'draft'}
-            h = path_under(req.get('handoff'), [SESSIONS])
-            d = path_under(req.get('draft'), [SESSIONS])
+            try:
+                h = path_under(req.get('handoff'), [SESSIONS])
+                d = path_under(req.get('draft'), [SESSIONS])
+            except ValueError:
+                h = path_under(req.get('handoff'), [SUMMARY_JOBS], allow_hidden=True)
+                d = path_under(req.get('draft'), [SUMMARY_JOBS], allow_hidden=True)
+                if h.parent.parent != SUMMARY_JOBS.resolve() or d.parent != h.parent:
+                    raise ValueError('Summary-job handoff and draft must be in one job directory')
             if h.name != 'minutes-handoff.json' or d.parent != h.parent or d.suffix != '.md':
                 raise ValueError('Handoff and Markdown draft must belong to one session')
             data = json.loads(h.read_text(encoding='utf-8'))
@@ -114,7 +125,12 @@ def build_plan(req):
         allowed = {'operation', 'action'}
         args = [action]
         if action == 'search':
-            allowed |= {'text', 'subject', 'sender', 'since', 'before', 'folders', 'all_folders', 'limit'}
+            allowed |= {'text', 'subject', 'sender', 'since', 'before', 'folders', 'all_folders', 'limit', 'headers_only'}
+            if 'headers_only' in req:
+                if type(req['headers_only']) is not bool:
+                    raise ValueError('headers_only must be boolean')
+                if req['headers_only']:
+                    args += ['--headers-only']
             for key, flag in [('text', '--text'), ('subject', '--subject'), ('sender', '--from'),
                               ('since', '--since'), ('before', '--before')]:
                 if key in req:
@@ -145,6 +161,19 @@ def build_plan(req):
             args += ['--folder', text(req.get('folder')), '--uid', uid]
         fields(req, allowed)
         return python('products/yandex-mail/mail.py', *args)
+    if op == 'rules':
+        fields(req, {'operation', 'action', 'name'})
+        if req.get('action') != 'open':
+            raise ValueError('Only opening rules is allowed')
+        names = {'local': 'local-operations.rules', 'default': 'default.rules'}
+        name = req.get('name', 'local')
+        if not isinstance(name, str) or name not in names:
+            raise ValueError('Unknown rules name')
+        target = RULES_DIR / names[name]
+        if target.is_symlink() or target.resolve(strict=True) != target.absolute() or not target.is_file():
+            raise ValueError('Rules must be a regular file at the fixed local path')
+        editor = Path(os.environ['SystemRoot']) / 'System32/notepad.exe'
+        return ('exec', [str(editor), str(target)])
     if op == 'open':
         fields(req, {'operation', 'target', 'anchor'})
         target = text(req.get('target'))

@@ -47,6 +47,28 @@ Submit только проверяет и атомарно ставит зада
 
 ## Задания
 
+Повторяющиеся диагностические команды доступны через ту же очередь, без дополнительных shell-разрешений:
+
+| operation | Поля | Границы |
+|---|---|---|
+| tests | suite: permissions, dion-helper, archive, skill-health | Фиксированные unittest-наборы, без записи аудио и аккаунтов; timeout 300 с |
+| diagnostic | component: dion, syncthing, archive | Dion: соответствие локальных конфигов и свежие файлы журнала; Syncthing: GET status/ignores одной фиксированной папки; архиватор: служебный status.json |
+| github | action: auth либо refs/ci с repo: skills, dion, permissions | Текущий login без токена, SHA main или последние пять CI; без push, fetch, login и изменений репозиториев |
+| link | url: публичный HTTP(S) URL | GET до 64 КиБ, статус/заголовок, максимум пять редиректов; запрет учётных данных в URL, локальных IP, нестандартных портов и HTTPS downgrade |
+
+Данные диагностик не являются ремонтом: свежий файл не доказывает запись имён; старый status.json архиватора не доказывает, что процесс жив. Диагностика Dion не читает установленный ID из Chrome, а сравнивает конфиги; actual Chrome ID проверяется отдельно. URL для проверки не должен содержать секреты. Проверка ссылок не использует браузерные cookies/авторизацию; 403/антибот не доказывает, что страницы нет. Предпосылки и ошибки возвращаются явно; недоступные сервисы автоматически не запускаются. `dion-helper` здесь запускает Python-тесты; полный Python/JS-аудит остаётся в skill-health.
+
+Примеры строк для stdin submit.py:
+
+```json
+{"operation":"tests","suite":"permissions"}
+{"operation":"diagnostic","component":"dion"}
+{"operation":"github","action":"refs","repo":"permissions"}
+{"operation":"link","url":"https://github.com/Vaakom/local-permissions"}
+```
+
+Команда «Открой правила доступа»: `{"operation":"rules","action":"open","name":"local"}`. Для сохранённых технических одобрений используйте name=default. Открываются только два фиксированных файла текущего пользователя в Блокноте: ~/.codex/rules/local-operations.rules и default.rules. Произвольный путь не принимается; правила не копируются и не публикуются, общий open не расширяется. Блокнот может оставаться открытым после завершения команды.
+
 Источник точной схемы — `build_plan` в `run.py`. Неизвестные поля отвергаются.
 
 - Dion: `operation=dion`, `action=status|devices|stop`; `start` требует title, необязательные speaker/mic — целочисленные индексы устройств, meeting_journal — существующий каталог в journals. `process` требует session; `summarize` — transcript Markdown в notes. `finalize-minutes` — handoff с именем minutes-handoff.json и draft Markdown из той же сессии. Обработка использует browser-имена и Codex minutes; состояние awaiting_codex требует отдельной подготовки и финализации протокола.
@@ -76,9 +98,12 @@ Submit только проверяет и атомарно ставит зада
 
 ```text
 python -X utf8 -B -m unittest test_dispatch test_submit
+python -X utf8 -B -m unittest test_dispatch test_submit test_operations
 python -X utf8 -B verify_rules.py
 ```
 
 Тестам нужен существующий runtime-каталог C:/AI/Tools/local-permissions. Используются синтетические данные: аудио, почта и браузер не запускаются. Проверка execpolicy сопоставляет команды и не исполняет проверяемые операции. Успешные тесты не подтверждают реальные аудиоустройства, качество распознавания, доступ к аккаунтам или срабатывание одобрений в интерфейсе.
 
 [Скилл агента](https://github.com/Vaakom/agent-skills/tree/main/local-permissions) описывает использование продукта. Установка только скилла не устанавливает этот код.
+
+Machine-local Dion settings: `%LOCALAPPDATA%/DionSecretary/config.json` and `%LOCALAPPDATA%/DionSpeakerHelper/config.json`. The helper runtime and new journals are under `%LOCALAPPDATA%/DionSpeakerHelper/runtime`. Legacy local config is a fallback only.

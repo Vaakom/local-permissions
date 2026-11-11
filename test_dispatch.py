@@ -20,8 +20,11 @@ class DispatchTests(unittest.TestCase):
         self.sessions.mkdir()
         self.notes = self.vault / 'meetings'
         self.notes.mkdir()
+        self.summary_jobs = root / 'summary-jobs'
+        self.summary_jobs.mkdir()
         self.patches = [patch.object(d, 'VAULT', self.vault), patch.object(d, 'SESSIONS', self.sessions),
-                        patch.object(d, 'NOTES', self.notes), patch.object(d, 'DOCS', root / 'docs')]
+                        patch.object(d, 'SUMMARY_JOBS', self.summary_jobs), patch.object(d, 'NOTES', self.notes),
+                        patch.object(d, 'DOCS', root / 'docs')]
         for p in self.patches:
             p.start()
 
@@ -57,6 +60,23 @@ class DispatchTests(unittest.TestCase):
         _, argv = d.build_plan({'operation': 'dion', 'action': 'process', 'session': str(p)})
         self.assertEqual(argv[-4:], ['--minutes-provider', 'codex', '--speaker-mode', 'browser'])
 
+    def test_finalize_minutes_accepts_only_summary_job_handoff_and_draft(self):
+        job = self.summary_jobs / 'job'
+        job.mkdir()
+        transcript = self.notes / 'transcript.md'
+        transcript.write_text('# Transcript\n', encoding='utf-8')
+        protocol = self.notes / 'protocol.md'
+        handoff = job / 'minutes-handoff.json'
+        handoff.write_text(json.dumps({'transcript': str(transcript), 'protocol': str(protocol)}), encoding='utf-8')
+        draft = job / 'minutes-draft.md'
+        draft.write_text('## Summary\n', encoding='utf-8')
+        kind, argv = d.build_plan({'operation': 'dion', 'action': 'finalize-minutes',
+                                   'handoff': str(handoff), 'draft': str(draft)})
+        self.assertEqual(kind, 'exec')
+        self.assertEqual(argv[-4:], ['--handoff', str(handoff.resolve()), '--draft', str(draft.resolve())])
+        self.reject({'operation': 'dion', 'action': 'finalize-minutes',
+                     'handoff': str(job / 'nested' / 'minutes-handoff.json'), 'draft': str(draft)})
+
     def test_mail_setup_send_delete_rejected(self):
         for action in ['setup', 'send', 'delete', 'move']:
             self.reject({'operation': 'mail', 'action': action})
@@ -67,6 +87,9 @@ class DispatchTests(unittest.TestCase):
         self.assertIn('--all-folders', argv)
 
     def test_mail_bad_fields_and_values(self):
+        _, argv = d.build_plan({'operation':'mail', 'action':'search', 'headers_only':True})
+        self.assertIn('--headers-only', argv)
+        self.reject({'operation':'mail', 'action':'search', 'headers_only':'yes'})
         for req in [dict(action='read', uid='1;bad', folder='INBOX'),
                     dict(action='search', limit=101), dict(action='search', since='yesterday'),
                     dict(action='search', command='send')]:
@@ -105,6 +128,23 @@ class DispatchTests(unittest.TestCase):
         p = Path(self.tmp.name) / 'outside.pdf'
         p.touch()
         self.reject({'operation': 'open', 'target': str(p)})
+
+    def test_rules_open_fixed_names_only(self):
+        root = Path(self.tmp.name) / 'rules'
+        root.mkdir()
+        for name in ('local-operations.rules', 'default.rules'):
+            (root / name).touch()
+        with patch.object(d, 'RULES_DIR', root):
+            for name, filename in [('local', 'local-operations.rules'), ('default', 'default.rules')]:
+                kind, argv = d.build_plan({'operation': 'rules', 'action': 'open', 'name': name})
+                self.assertEqual(kind, 'exec')
+                self.assertEqual(Path(argv[0]).name, 'notepad.exe')
+                self.assertEqual(argv[1], str(root / filename))
+            for req in [{'action': 'write'}, {'action': 'open', 'name': '../other'},
+                        {'action': 'open', 'name': []}, {'action': 'open', 'path': 'anything'}]:
+                self.reject({'operation': 'rules', **req})
+            (root / 'local-operations.rules').unlink()
+            self.reject({'operation': 'rules', 'action': 'open'})
 
     def test_fixed_audit_only(self):
         self.reject({'operation': 'audit', 'check': 'run-anything'})
